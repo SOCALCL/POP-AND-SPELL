@@ -173,7 +173,7 @@
     const WORD_LISTS = {
       EASY: ["APPLE", "HOUSE", "WATER", "SMILE", "BREAD", "HORSE", "CHAIR", "TABLE", "TRAIN", "PLANT"],
       MEDIUM: ["SCHEDULE", "MOUNTAIN", "STRUGGLE", "VACATION", "LANGUAGE", "SHOULDER", "BEAUTIFUL", "DISTANCE"],
-      HARD: ["EFFERVESCENT", "SERENDIPITY", "KALEIDOSCOPE", "MELLIFLUOUS", "PETRICHOR", "EPIPHANY", "LUMINESCENCE"]
+      HARD: ["GITHUB", "ARTIFICIAL", "INTELLIGENCE", "BEDROCK", "AMAZON", "EPIPHANY", "LUMINESCENCE"]
     };
 
     const BALLOON_PALETTE = [
@@ -323,16 +323,6 @@
         }, 200);
       };
 
-      const handleAllDone = () => {
-        setGameState('closed');
-        sfx.setMusic(false);
-        try {
-          window.close(); 
-        } catch (e) {
-          console.log("Window close prevented by browser security.");
-        }
-      };
-
       useEffect(() => {
         const handleKeyDown = (e) => {
           const key = e.key.toUpperCase();
@@ -396,18 +386,7 @@
         }
       };
 
-      if (gameState === 'closed') {
-        return (
-          <div className={`min-h-screen flex flex-col items-center justify-center p-8 font-sans bg-slate-900 text-white text-center`}>
-            <h1 className="text-4xl sm:text-6xl font-extrabold mb-2 pb-4 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 leading-normal">
-              Thanks for playing!
-            </h1>
-            <p className="text-xl sm:text-2xl text-slate-300">
-              You may now close this window or tab to return to your screen.
-            </p>
-          </div>
-        );
-      }
+  
 
       if (gameState === 'setup') {
         return (
@@ -689,12 +668,7 @@
                  >
                    RETURN TO HOME
                  </button>
-                 <button 
-                    onClick={handleAllDone}
-                    className="px-8 py-3 bg-rose-600 text-white text-lg font-extrabold rounded-full shadow-2xl hover:scale-105 transition-transform"
-                 >
-                   ALL DONE
-                 </button>
+      
                </div>
             )}
           </div>

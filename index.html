@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Balloon Spelling Game</title>
   
-  <!-- These scripts translate the React Canvas code into a standard website -->
+  <!-- These scripts translate the React code into a standard website -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -17,744 +17,723 @@
   <script type="text/babel">
     const { useState, useEffect, useCallback, useRef } = React;
 
-// --- Safe & Simple Procedural Audio Engine ---
-// Generates all sounds natively through math. Eliminates external URLs, 
-// complex arrays, and network/CORS issues entirely.
-class AudioEngine {
-  constructor() {
-    this.ctx = null;
-    this.musicOn = false;
-    this.bgmTrack = 'WAVES';
-    this.bgmNode = null;
-    this.birdInterval = null;
-  }
-
-  init() {
-    if (!this.ctx) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new AudioContext();
-    }
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
-    }
-  }
-
-  stopBGM() {
-    if (this.birdInterval) clearInterval(this.birdInterval);
-    if (this.bgmNode) {
-      try { this.bgmNode.stop(); } catch(e) {}
-      try { this.bgmNode.disconnect(); } catch(e) {}
-    }
-    this.bgmNode = null;
-  }
-
-  setMusic(on, track = 'WAVES') {
-    this.init();
-    this.musicOn = on;
-    this.bgmTrack = track;
-    this.stopBGM();
-
-    if (this.musicOn) {
-      if (track === 'WAVES') this.playWaves();
-      else if (track === 'BIRDS') this.playBirds();
-    }
-  }
-
-  playWaves() {
-    // Generate soft, continuous ocean-like noise
-    const bufferSize = this.ctx.sampleRate * 2;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    let lastOut = 0;
-    for (let i = 0; i < bufferSize; i++) {
-        const white = Math.random() * 2 - 1;
-        data[i] = (lastOut + (0.02 * white)) / 1.02;
-        lastOut = data[i];
-        data[i] *= 3.5; 
-    }
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-    noise.loop = true;
-
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 400;
-
-    // Modulate to simulate waves crashing and receding
-    const lfo = this.ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.15; 
-    const lfoGain = this.ctx.createGain();
-    lfoGain.gain.value = 200;
-    lfo.connect(lfoGain);
-    lfoGain.connect(filter.frequency);
-
-    const masterGain = this.ctx.createGain();
-    masterGain.gain.value = 0.2;
-
-    noise.connect(filter);
-    filter.connect(masterGain);
-    masterGain.connect(this.ctx.destination);
-
-    noise.start();
-    lfo.start();
-
-    this.bgmNode = noise;
-  }
-
-  playBirds() {
-    // Random bird chirps scheduled continuously
-    this.birdInterval = setInterval(() => {
-      if (!this.musicOn || this.bgmTrack !== 'BIRDS' || Math.random() > 0.6) return;
-      
-      const t = this.ctx.currentTime;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(3000 + Math.random() * 1500, t);
-      osc.frequency.exponentialRampToValueAtTime(2000 + Math.random() * 1000, t + 0.2);
-
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.05, t + 0.05);
-      gain.gain.linearRampToValueAtTime(0, t + 0.2);
-
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.2);
-    }, 800);
-  }
-
-  playTone(freq, type, duration, vol, delay = 0) {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime + delay;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, t);
-    
-    gain.gain.setValueAtTime(vol, t);
-    gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
-    
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-    
-    osc.start(t);
-    osc.stop(t + duration);
-  }
-
-  playPop() {
-    this.init();
-    this.playTone(800, 'sine', 0.1, 0.5, 0);
-    this.playTone(150, 'sawtooth', 0.1, 0.4, 0);
-  }
-
-  playInflate() {
-    this.init();
-    this.playTone(350, 'triangle', 0.3, 0.3, 0);
-  }
-
-  playWin() {
-    this.init();
-    // Triumphant rising tones explicitly written out
-    this.playTone(440, 'sine', 0.3, 0.3, 0.0);
-    this.playTone(554, 'sine', 0.3, 0.3, 0.2);
-    this.playTone(659, 'sine', 0.5, 0.3, 0.4);
-    this.playTone(880, 'sine', 0.8, 0.3, 0.6);
-  }
-
-  playLose() {
-    this.init();
-    // Sad trombone falling tones explicitly written out
-    this.playTone(300, 'sawtooth', 0.4, 0.3, 0.0);
-    this.playTone(280, 'sawtooth', 0.4, 0.3, 0.4);
-    this.playTone(260, 'sawtooth', 0.4, 0.3, 0.8);
-    this.playTone(230, 'sawtooth', 1.0, 0.3, 1.2);
-  }
-}
-
-const sfx = new AudioEngine();
-
-// --- Word Banks (By Difficulty / Grade Level) ---
-const WORD_LISTS = {
-  EASY: ["APPLE", "HOUSE", "WATER", "SMILE", "BREAD", "HORSE", "CHAIR", "TABLE", "TRAIN", "PLANT"], // ~4th Grade
-  MEDIUM: ["SCHEDULE", "MOUNTAIN", "STRUGGLE", "VACATION", "LANGUAGE", "SHOULDER", "BEAUTIFUL", "DISTANCE"], // ~8th Grade
-  HARD: ["EFFERVESCENT", "SERENDIPITY", "KALEIDOSCOPE", "MELLIFLUOUS", "PETRICHOR", "EPIPHANY", "LUMINESCENCE"] // ~12th Grade
-};
-
-const BALLOON_PALETTE = [
-  { color: 'from-pink-400 to-rose-600', hex: '#f43f5e' },
-  { color: 'from-orange-400 to-amber-600', hex: '#f59e0b' },
-  { color: 'from-yellow-300 to-yellow-500', hex: '#eab308' },
-  { color: 'from-green-400 to-emerald-600', hex: '#10b981' },
-  { color: 'from-cyan-400 to-blue-600', hex: '#3b82f6' },
-  { color: 'from-indigo-400 to-violet-600', hex: '#8b5cf6' },
-  { color: 'from-purple-400 to-fuchsia-600', hex: '#d946ef' },
-  { color: 'from-red-400 to-red-600', hex: '#ef4444' },
-  { color: 'from-teal-400 to-teal-600', hex: '#14b8a6' },
-];
-
-export default function App() {
-  // Game Configuration State
-  const [gameState, setGameState] = useState('setup'); // setup, playing, won_animating, won, lost, closed
-  const [difficulty, setDifficulty] = useState('EASY');
-  const [bgTheme, setBgTheme] = useState('SUNNY');
-  const [musicOn, setMusicOn] = useState(false);
-  const [bgmTrack, setBgmTrack] = useState('WAVES');
-
-  // Active Game State
-  const [word, setWord] = useState("");
-  const [guessedLetters, setGuessedLetters] = useState(new Set());
-  const [balloons, setBalloons] = useState([]);
-  const [hintUsed, setHintUsed] = useState(false);
-  const [confetti, setConfetti] = useState(false);
-
-  const initGame = useCallback((diff) => {
-    sfx.init(); // Safely unlock browser audio on user click
-
-    const wordList = WORD_LISTS[diff];
-    const randomWord = wordList[Math.floor(Math.random() * wordList.length)];
-    setWord(randomWord);
-    setGuessedLetters(new Set());
-    setHintUsed(false);
-    setConfetti(false);
-
-    let startingBalloons = 9;
-    if (diff === 'MEDIUM') startingBalloons = 7;
-    if (diff === 'HARD') startingBalloons = 5;
-
-    const initialBalloons = Array.from({ length: startingBalloons }).map((_, i) => ({
-      id: i,
-      ...BALLOON_PALETTE[i % BALLOON_PALETTE.length],
-      popped: false,
-      scale: 1
-    }));
-
-    setBalloons(initialBalloons);
-    setGameState('playing');
-    sfx.setMusic(musicOn, bgmTrack); 
-  }, [musicOn, bgmTrack]);
-
-  const toggleMusic = () => {
-    sfx.init();
-    const newState = !musicOn;
-    setMusicOn(newState);
-    sfx.setMusic(newState, bgmTrack);
-  };
-
-  const changeTrack = (e) => {
-    sfx.init();
-    const track = e.target.value;
-    setBgmTrack(track);
-    sfx.setMusic(musicOn, track);
-  };
-
-  const executeWinSequence = (newGuessed) => {
-    setGameState('won_animating');
-    
-    // 1. Inflate all remaining balloons significantly
-    sfx.playInflate();
-    setBalloons(prev => prev.map(b => b.popped ? b : { ...b, scale: b.scale + 0.8 }));
-    
-    // 2. Wait, then pop them all loudly and show confetti
-    setTimeout(() => {
-      sfx.playPop();
-      setBalloons(prev => prev.map(b => ({ ...b, popped: true })));
-      setConfetti(true);
-      sfx.playWin();
-      
-      // 3. Show Winner banner
-      setTimeout(() => {
-        setGameState('won');
-      }, 500);
-
-    }, 2000); 
-  };
-
-  const handleGuess = useCallback((letter) => {
-    if (gameState !== 'playing' || guessedLetters.has(letter)) return;
-
-    const newGuessed = new Set(guessedLetters);
-    newGuessed.add(letter);
-    setGuessedLetters(newGuessed);
-
-    const isCorrect = word.includes(letter);
-    let newBalloons = [...balloons];
-
-    if (isCorrect) {
-      sfx.playInflate();
-      newBalloons = newBalloons.map(b => !b.popped ? { ...b, scale: b.scale + 0.15 } : b);
-    } else {
-      sfx.playPop();
-      const targetIndex = newBalloons.findIndex(b => !b.popped);
-      if (targetIndex !== -1) {
-        newBalloons[targetIndex].popped = true;
+    // --- Safe & Simple Procedural Audio Engine ---
+    class AudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.musicOn = false;
+        this.bgmTrack = 'WAVES';
+        this.bgmNode = null;
+        this.birdInterval = null;
       }
-    }
-    
-    setBalloons(newBalloons);
 
-    // Check Win/Loss conditions
-    const activeBalloons = newBalloons.filter(b => !b.popped).length;
-    if (activeBalloons === 0) {
-      setGameState('lost');
-      sfx.playLose();
-    } else {
-      const isWin = word.split('').every(char => newGuessed.has(char));
-      if (isWin) {
-        executeWinSequence(newGuessed);
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
       }
-    }
-  }, [word, guessedLetters, gameState, balloons, difficulty]);
 
-  const useHint = () => {
-    if (hintUsed || gameState !== 'playing') return;
-    
-    const unpoppedCount = balloons.filter(b => !b.popped).length;
-    if (unpoppedCount <= 1) return;
-
-    const unguessedLetters = word.split('').filter(char => !guessedLetters.has(char));
-    if (unguessedLetters.length === 0) return;
-
-    const hintLetter = unguessedLetters[Math.floor(Math.random() * unguessedLetters.length)];
-    
-    setHintUsed(true);
-    handleGuess(hintLetter);
-
-    setTimeout(() => {
-        setBalloons(prev => {
-            const arr = [...prev];
-            const targetIndex = arr.findIndex(b => !b.popped);
-            if (targetIndex !== -1) {
-                arr[targetIndex].popped = true;
-            }
-            return arr;
-        });
-        sfx.playPop();
-    }, 200);
-  };
-
-  const handleAllDone = () => {
-    setGameState('closed');
-    sfx.setMusic(false);
-    try {
-      window.close(); 
-    } catch (e) {
-      console.log("Window close prevented by browser security.");
-    }
-  };
-
-  // Keyboard support
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      const key = e.key.toUpperCase();
-      if (/^[A-Z]$/.test(key)) {
-        handleGuess(key);
+      stopBGM() {
+        if (this.birdInterval) clearInterval(this.birdInterval);
+        if (this.bgmNode) {
+          try { this.bgmNode.stop(); } catch(e) {}
+          try { this.bgmNode.disconnect(); } catch(e) {}
+        }
+        this.bgmNode = null;
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleGuess]);
 
-  // --- Thematic Backgrounds ---
-  const getBackgroundStyles = () => {
-    switch (bgTheme) {
-      case 'NIGHT': return 'bg-slate-900 text-slate-100';
-      case 'MIAMI': return 'bg-gradient-to-br from-fuchsia-600 via-purple-800 to-cyan-500 text-white';
-      case 'SUNNY':
-      default: return 'bg-sky-300 text-slate-800';
-    }
-  };
+      setMusic(on, track = 'WAVES') {
+        this.init();
+        this.musicOn = on;
+        this.bgmTrack = track;
+        this.stopBGM();
 
-  const renderBackgroundDecorations = () => {
-    if (bgTheme === 'SUNNY') {
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-10 right-10 w-32 h-32 bg-yellow-300 rounded-full blur-sm animate-pulse shadow-[0_0_60px_rgba(253,224,71,0.8)]"></div>
-          <div className="absolute top-20 left-20 w-48 h-16 bg-white/60 rounded-full blur-md"></div>
-          <div className="absolute top-40 right-40 w-64 h-20 bg-white/50 rounded-full blur-md"></div>
-        </div>
-      );
-    }
-    if (bgTheme === 'NIGHT') {
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-10 right-20 w-24 h-24 bg-slate-200 rounded-full shadow-[0_0_40px_rgba(255,255,255,0.4)]"></div>
-          {/* Mock stars */}
-          {Array.from({length: 30}).map((_, i) => (
-             <div key={i} className="absolute bg-white rounded-full" 
-                  style={{
-                    width: Math.random() * 3 + 1 + 'px', 
-                    height: Math.random() * 3 + 1 + 'px',
-                    top: Math.random() * 100 + '%',
-                    left: Math.random() * 100 + '%',
-                    opacity: Math.random() * 0.8 + 0.2
-                  }} 
-             />
-          ))}
-        </div>
-      );
-    }
-    if (bgTheme === 'MIAMI') {
-      return (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
-          <div className="absolute bottom-0 w-full h-1/2" style={{
-            backgroundImage: 'linear-gradient(cyan 1px, transparent 1px), linear-gradient(90deg, cyan 1px, transparent 1px)',
-            backgroundSize: '40px 40px',
-            transform: 'perspective(500px) rotateX(60deg)',
-            transformOrigin: 'bottom'
-          }}></div>
-          <div className="absolute top-1/4 left-1/2 transform -translate-x-1/2 w-64 h-64 bg-yellow-400 rounded-full blur-md mix-blend-screen"></div>
-        </div>
-      );
-    }
-  };
+        if (this.musicOn) {
+          if (track === 'WAVES') this.playWaves();
+          else if (track === 'BIRDS') this.playBirds();
+        }
+      }
 
-  // --- Setup Screen ---
-  if (gameState === 'closed') {
-    return (
-      <div className={`min-h-screen flex flex-col items-center justify-center p-8 font-sans bg-slate-900 text-white text-center`}>
-        <h1 className="text-4xl sm:text-6xl font-extrabold mb-2 pb-4 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 leading-normal">
-          Thanks for playing!
-        </h1>
-        <p className="text-xl sm:text-2xl text-slate-300">
-          You may now close this window or tab to return to your screen.
-        </p>
-      </div>
-    );
-  }
+      playWaves() {
+        const bufferSize = this.ctx.sampleRate * 2;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        let lastOut = 0;
+        for (let i = 0; i < bufferSize; i++) {
+            const white = Math.random() * 2 - 1;
+            data[i] = (lastOut + (0.02 * white)) / 1.02;
+            lastOut = data[i];
+            data[i] *= 3.5; 
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        noise.loop = true;
 
-  if (gameState === 'setup') {
-    return (
-      <div className={`min-h-screen flex flex-col items-center justify-center p-8 font-sans ${getBackgroundStyles()}`}>
-        {renderBackgroundDecorations()}
-        <div className="relative z-10 bg-white/10 backdrop-blur-xl p-10 rounded-3xl shadow-2xl border border-white/20 max-w-lg w-full text-center">
-          <h1 className="text-5xl font-extrabold mb-8 tracking-tight drop-shadow-md">Pop & Spell</h1>
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 400;
+
+        const lfo = this.ctx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.15; 
+        const lfoGain = this.ctx.createGain();
+        lfoGain.gain.value = 200;
+        lfo.connect(lfoGain);
+        lfoGain.connect(filter.frequency);
+
+        const masterGain = this.ctx.createGain();
+        masterGain.gain.value = 0.2;
+
+        noise.connect(filter);
+        filter.connect(masterGain);
+        masterGain.connect(this.ctx.destination);
+
+        noise.start();
+        lfo.start();
+
+        this.bgmNode = noise;
+      }
+
+      playBirds() {
+        this.birdInterval = setInterval(() => {
+          if (!this.musicOn || this.bgmTrack !== 'BIRDS' || Math.random() > 0.6) return;
           
-          <div className="flex flex-col gap-6 mb-8 text-left">
-            <div>
-              <label className="block text-lg font-bold mb-2">Difficulty (Balloons & Words)</label>
-              <select 
-                value={difficulty} 
-                onChange={e => setDifficulty(e.target.value)}
-                className="w-full bg-black/20 border border-white/30 rounded-xl p-3 outline-none focus:ring-2 focus:ring-white/50 [&>option]:text-black"
-              >
-                <option value="EASY">Easy (9 Balloons, 4th Grade Words)</option>
-                <option value="MEDIUM">Medium (7 Balloons, 8th Grade Words)</option>
-                <option value="HARD">Hard (5 Balloons, 12th Grade Words)</option>
-              </select>
-            </div>
+          const t = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(3000 + Math.random() * 1500, t);
+          osc.frequency.exponentialRampToValueAtTime(2000 + Math.random() * 1000, t + 0.2);
 
-            <div>
-              <label className="block text-lg font-bold mb-2">Environment</label>
-              <select 
-                value={bgTheme} 
-                onChange={e => setBgTheme(e.target.value)}
-                className="w-full bg-black/20 border border-white/30 rounded-xl p-3 outline-none focus:ring-2 focus:ring-white/50 [&>option]:text-black"
-              >
-                <option value="SUNNY">Sunny Day</option>
-                <option value="NIGHT">Night Sky</option>
-                <option value="MIAMI">Neon</option>
-              </select>
-            </div>
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(0.05, t + 0.05);
+          gain.gain.linearRampToValueAtTime(0, t + 0.2);
 
-            <div className="flex flex-col gap-3 mt-2">
-              <div className="flex items-center gap-3">
-                <input 
-                  type="checkbox" 
-                  id="musicToggle" 
-                  checked={musicOn} 
-                  onChange={toggleMusic}
-                  className="w-6 h-6 rounded accent-pink-500 cursor-pointer"
-                />
-                <label htmlFor="musicToggle" className="text-lg font-bold cursor-pointer">
-                  Background Music On
-                </label>
-              </div>
-              
-              {musicOn && (
-                <div className="flex items-center gap-3 pl-8 animate-fade-in">
-                   <label className="text-md font-bold">Sound:</label>
-                   <select 
-                     value={bgmTrack} 
-                     onChange={changeTrack}
-                     className="bg-black/20 border border-white/30 rounded-lg p-2 outline-none focus:ring-2 focus:ring-white/50 [&>option]:text-black"
-                   >
-                     <option value="WAVES">Waves</option>
-                     <option value="BIRDS">Birds</option>
-                   </select>
-                </div>
-              )}
-            </div>
-          </div>
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.2);
+        }, 800);
+      }
 
-          <button 
-            onClick={() => initGame(difficulty)}
-            className="w-full py-4 bg-white text-black font-bold text-xl rounded-full hover:scale-105 transition-transform shadow-xl"
-          >
-            Start Game
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Main Game Render ---
-  const keyboardRows = [
-    "QWERTYUIOP".split(''),
-    "ASDFGHJKL".split(''),
-    "ZXCVBNM".split('')
-  ];
-
-  const activeBalloonsCount = balloons.filter(b => !b.popped).length;
-  const isDarkTheme = bgTheme === 'NIGHT' || bgTheme === 'MIAMI';
-
-  return (
-    <div className={`min-h-screen flex flex-col items-center justify-between p-4 sm:p-8 font-sans overflow-hidden transition-colors duration-1000 ${getBackgroundStyles()}`}>
-      {renderBackgroundDecorations()}
-
-      {/* Top Bar */}
-      <div className="w-full max-w-5xl flex justify-between items-center z-20 px-4">
-         <button onClick={() => { setGameState('setup'); sfx.setMusic(false); }} className="bg-black/20 hover:bg-black/40 px-4 py-2 rounded-full backdrop-blur-md transition-colors font-bold">
-           ← Home
-         </button>
-         <div className="text-xl font-black tracking-widest uppercase opacity-80">
-            {difficulty}
-         </div>
-      </div>
-
-      <div className="max-w-4xl w-full z-10 flex flex-col items-center flex-1 justify-center relative">
+      playTone(freq, type, duration, vol, delay = 0) {
+        if (!this.ctx) return;
+        const t = this.ctx.currentTime + delay;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
         
-        {/* Banner Overlays */}
-        {(gameState === 'won' || gameState === 'lost') && (
-          <div className="absolute top-[20%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[120vw] z-50 pointer-events-none">
-            <div className="animate-banner-unfurl w-full flex justify-center drop-shadow-2xl">
-              <div className={`px-20 py-8 text-5xl sm:text-7xl font-black tracking-tighter text-white uppercase transform -skew-x-12 border-y-8 border-white shadow-2xl ${gameState === 'won' ? 'bg-emerald-500' : 'bg-rose-600'}`}>
-                {gameState === 'won' ? 'WINNER!' : 'GOOD TRY!'}
-              </div>
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, t);
+        
+        gain.gain.setValueAtTime(vol, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
+        
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        
+        osc.start(t);
+        osc.stop(t + duration);
+      }
+
+      playPop() {
+        this.init();
+        this.playTone(800, 'sine', 0.1, 0.5, 0);
+        this.playTone(150, 'sawtooth', 0.1, 0.4, 0);
+      }
+
+      playInflate() {
+        this.init();
+        this.playTone(350, 'triangle', 0.3, 0.3, 0);
+      }
+
+      playWin() {
+        this.init();
+        this.playTone(440, 'sine', 0.3, 0.3, 0.0);
+        this.playTone(554, 'sine', 0.3, 0.3, 0.2);
+        this.playTone(659, 'sine', 0.5, 0.3, 0.4);
+        this.playTone(880, 'sine', 0.8, 0.3, 0.6);
+      }
+
+      playLose() {
+        this.init();
+        this.playTone(300, 'sawtooth', 0.4, 0.3, 0.0);
+        this.playTone(280, 'sawtooth', 0.4, 0.3, 0.4);
+        this.playTone(260, 'sawtooth', 0.4, 0.3, 0.8);
+        this.playTone(230, 'sawtooth', 1.0, 0.3, 1.2);
+      }
+    }
+
+    const sfx = new AudioEngine();
+
+    const WORD_LISTS = {
+      EASY: ["APPLE", "HOUSE", "WATER", "SMILE", "BREAD", "HORSE", "CHAIR", "TABLE", "TRAIN", "PLANT"],
+      MEDIUM: ["SCHEDULE", "MOUNTAIN", "STRUGGLE", "VACATION", "LANGUAGE", "SHOULDER", "BEAUTIFUL", "DISTANCE"],
+      HARD: ["EFFERVESCENT", "SERENDIPITY", "KALEIDOSCOPE", "MELLIFLUOUS", "PETRICHOR", "EPIPHANY", "LUMINESCENCE"]
+    };
+
+    const BALLOON_PALETTE = [
+      { color: 'from-pink-400 to-rose-600', hex: '#f43f5e' },
+      { color: 'from-orange-400 to-amber-600', hex: '#f59e0b' },
+      { color: 'from-yellow-300 to-yellow-500', hex: '#eab308' },
+      { color: 'from-green-400 to-emerald-600', hex: '#10b981' },
+      { color: 'from-cyan-400 to-blue-600', hex: '#3b82f6' },
+      { color: 'from-indigo-400 to-violet-600', hex: '#8b5cf6' },
+      { color: 'from-purple-400 to-fuchsia-600', hex: '#d946ef' },
+      { color: 'from-red-400 to-red-600', hex: '#ef4444' },
+      { color: 'from-teal-400 to-teal-600', hex: '#14b8a6' },
+    ];
+
+    // NOTE: Removed "export default" from this line so the browser can read it properly!
+    function App() {
+      const [gameState, setGameState] = useState('setup');
+      const [difficulty, setDifficulty] = useState('EASY');
+      const [bgTheme, setBgTheme] = useState('SUNNY');
+      const [musicOn, setMusicOn] = useState(false);
+      const [bgmTrack, setBgmTrack] = useState('WAVES');
+
+      const [word, setWord] = useState("");
+      const [guessedLetters, setGuessedLetters] = useState(new Set());
+      const [balloons, setBalloons] = useState([]);
+      const [hintUsed, setHintUsed] = useState(false);
+      const [confetti, setConfetti] = useState(false);
+
+      const initGame = useCallback((diff) => {
+        sfx.init();
+
+        const wordList = WORD_LISTS[diff];
+        const randomWord = wordList[Math.floor(Math.random() * wordList.length)];
+        setWord(randomWord);
+        setGuessedLetters(new Set());
+        setHintUsed(false);
+        setConfetti(false);
+
+        let startingBalloons = 9;
+        if (diff === 'MEDIUM') startingBalloons = 7;
+        if (diff === 'HARD') startingBalloons = 5;
+
+        const initialBalloons = Array.from({ length: startingBalloons }).map((_, i) => ({
+          id: i,
+          ...BALLOON_PALETTE[i % BALLOON_PALETTE.length],
+          popped: false,
+          scale: 1
+        }));
+
+        setBalloons(initialBalloons);
+        setGameState('playing');
+        sfx.setMusic(musicOn, bgmTrack); 
+      }, [musicOn, bgmTrack]);
+
+      const toggleMusic = () => {
+        sfx.init();
+        const newState = !musicOn;
+        setMusicOn(newState);
+        sfx.setMusic(newState, bgmTrack);
+      };
+
+      const changeTrack = (e) => {
+        sfx.init();
+        const track = e.target.value;
+        setBgmTrack(track);
+        sfx.setMusic(musicOn, track);
+      };
+
+      const executeWinSequence = (newGuessed) => {
+        setGameState('won_animating');
+        
+        sfx.playInflate();
+        setBalloons(prev => prev.map(b => b.popped ? b : { ...b, scale: b.scale + 0.8 }));
+        
+        setTimeout(() => {
+          sfx.playPop();
+          setBalloons(prev => prev.map(b => ({ ...b, popped: true })));
+          setConfetti(true);
+          sfx.playWin();
+          
+          setTimeout(() => {
+            setGameState('won');
+          }, 500);
+
+        }, 2000); 
+      };
+
+      const handleGuess = useCallback((letter) => {
+        if (gameState !== 'playing' || guessedLetters.has(letter)) return;
+
+        const newGuessed = new Set(guessedLetters);
+        newGuessed.add(letter);
+        setGuessedLetters(newGuessed);
+
+        const isCorrect = word.includes(letter);
+        let newBalloons = [...balloons];
+
+        if (isCorrect) {
+          sfx.playInflate();
+          newBalloons = newBalloons.map(b => !b.popped ? { ...b, scale: b.scale + 0.15 } : b);
+        } else {
+          sfx.playPop();
+          const targetIndex = newBalloons.findIndex(b => !b.popped);
+          if (targetIndex !== -1) {
+            newBalloons[targetIndex].popped = true;
+          }
+        }
+        
+        setBalloons(newBalloons);
+
+        const activeBalloons = newBalloons.filter(b => !b.popped).length;
+        if (activeBalloons === 0) {
+          setGameState('lost');
+          sfx.playLose();
+        } else {
+          const isWin = word.split('').every(char => newGuessed.has(char));
+          if (isWin) {
+            executeWinSequence(newGuessed);
+          }
+        }
+      }, [word, guessedLetters, gameState, balloons, difficulty]);
+
+      const useHint = () => {
+        if (hintUsed || gameState !== 'playing') return;
+        
+        const unpoppedCount = balloons.filter(b => !b.popped).length;
+        if (unpoppedCount <= 1) return;
+
+        const unguessedLetters = word.split('').filter(char => !guessedLetters.has(char));
+        if (unguessedLetters.length === 0) return;
+
+        const hintLetter = unguessedLetters[Math.floor(Math.random() * unguessedLetters.length)];
+        
+        setHintUsed(true);
+        handleGuess(hintLetter);
+
+        setTimeout(() => {
+            setBalloons(prev => {
+                const arr = [...prev];
+                const targetIndex = arr.findIndex(b => !b.popped);
+                if (targetIndex !== -1) {
+                    arr[targetIndex].popped = true;
+                }
+                return arr;
+            });
+            sfx.playPop();
+        }, 200);
+      };
+
+      const handleAllDone = () => {
+        setGameState('closed');
+        sfx.setMusic(false);
+        try {
+          window.close(); 
+        } catch (e) {
+          console.log("Window close prevented by browser security.");
+        }
+      };
+
+      useEffect(() => {
+        const handleKeyDown = (e) => {
+          const key = e.key.toUpperCase();
+          if (/^[A-Z]$/.test(key)) {
+            handleGuess(key);
+          }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+      }, [handleGuess]);
+
+      const getBackgroundStyles = () => {
+        switch (bgTheme) {
+          case 'NIGHT': return 'bg-slate-900 text-slate-100';
+          case 'MIAMI': return 'bg-gradient-to-br from-fuchsia-600 via-purple-800 to-cyan-500 text-white';
+          case 'SUNNY':
+          default: return 'bg-sky-300 text-slate-800';
+        }
+      };
+
+      const renderBackgroundDecorations = () => {
+        if (bgTheme === 'SUNNY') {
+          return (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              <div className="absolute top-10 right-10 w-32 h-32 bg-yellow-300 rounded-full blur-sm animate-pulse shadow-[0_0_60px_rgba(253,224,71,0.8)]"></div>
+              <div className="absolute top-20 left-20 w-48 h-16 bg-white/60 rounded-full blur-md"></div>
+              <div className="absolute top-40 right-40 w-64 h-20 bg-white/50 rounded-full blur-md"></div>
             </div>
+          );
+        }
+        if (bgTheme === 'NIGHT') {
+          return (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              <div className="absolute top-10 right-20 w-24 h-24 bg-slate-200 rounded-full shadow-[0_0_40px_rgba(255,255,255,0.4)]"></div>
+              {Array.from({length: 30}).map((_, i) => (
+                 <div key={i} className="absolute bg-white rounded-full" 
+                      style={{
+                        width: Math.random() * 3 + 1 + 'px', 
+                        height: Math.random() * 3 + 1 + 'px',
+                        top: Math.random() * 100 + '%',
+                        left: Math.random() * 100 + '%',
+                        opacity: Math.random() * 0.8 + 0.2
+                      }} 
+                 />
+              ))}
+            </div>
+          );
+        }
+        if (bgTheme === 'MIAMI') {
+          return (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
+              <div className="absolute bottom-0 w-full h-1/2" style={{
+                backgroundImage: 'linear-gradient(cyan 1px, transparent 1px), linear-gradient(90deg, cyan 1px, transparent 1px)',
+                backgroundSize: '40px 40px',
+                transform: 'perspective(500px) rotateX(60deg)',
+                transformOrigin: 'bottom'
+              }}></div>
+              <div className="absolute top-1/4 left-1/2 transform -translate-x-1/2 w-64 h-64 bg-yellow-400 rounded-full blur-md mix-blend-screen"></div>
+            </div>
+          );
+        }
+      };
+
+      if (gameState === 'closed') {
+        return (
+          <div className={`min-h-screen flex flex-col items-center justify-center p-8 font-sans bg-slate-900 text-white text-center`}>
+            <h1 className="text-4xl sm:text-6xl font-extrabold mb-2 pb-4 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 leading-normal">
+              Thanks for playing!
+            </h1>
+            <p className="text-xl sm:text-2xl text-slate-300">
+              You may now close this window or tab to return to your screen.
+            </p>
           </div>
-        )}
+        );
+      }
 
-        {/* Confetti Particles */}
-        {confetti && (
-           <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
-              {Array.from({length: 100}).map((_, i) => {
-                const colors = ['bg-pink-500', 'bg-blue-500', 'bg-yellow-400', 'bg-green-500', 'bg-purple-500'];
-                return (
-                  <div 
-                    key={i} 
-                    className={`absolute w-3 h-3 ${colors[Math.floor(Math.random() * colors.length)]} animate-confetti-fall`}
-                    style={{
-                      left: `${Math.random() * 100}%`,
-                      top: `-5%`,
-                      animationDelay: `${Math.random() * 2}s`,
-                      animationDuration: `${Math.random() * 2 + 2}s`
-                    }}
-                  />
-                )
-              })}
-           </div>
-        )}
+      if (gameState === 'setup') {
+        return (
+          <div className={`min-h-screen flex flex-col items-center justify-center p-8 font-sans ${getBackgroundStyles()}`}>
+            {renderBackgroundDecorations()}
+            <div className="relative z-10 bg-white/10 backdrop-blur-xl p-10 rounded-3xl shadow-2xl border border-white/20 max-w-lg w-full text-center">
+              <h1 className="text-5xl font-extrabold mb-8 tracking-tight drop-shadow-md">Pop & Spell</h1>
+              
+              <div className="flex flex-col gap-6 mb-8 text-left">
+                <div>
+                  <label className="block text-lg font-bold mb-2">Difficulty (Balloons & Words)</label>
+                  <select 
+                    value={difficulty} 
+                    onChange={e => setDifficulty(e.target.value)}
+                    className="w-full bg-black/20 border border-white/30 rounded-xl p-3 outline-none focus:ring-2 focus:ring-white/50 [&>option]:text-black"
+                  >
+                    <option value="EASY">Easy (9 Balloons, 4th Grade Words)</option>
+                    <option value="MEDIUM">Medium (7 Balloons, 8th Grade Words)</option>
+                    <option value="HARD">Hard (5 Balloons, 12th Grade Words)</option>
+                  </select>
+                </div>
 
-        {/* Balloon Area */}
-        <div className="flex justify-center items-end h-64 sm:h-80 w-full mb-8 gap-1 sm:gap-4 relative z-20">
-          {balloons.map((balloon, index) => {
-            return (
-              <div 
-                key={balloon.id} 
-                className="relative flex flex-col items-center"
-                style={{
-                  animation: balloon.popped ? 'none' : `bob 3s ease-in-out infinite ${index * 0.2}s alternate`
-                }}
-              >
-                <div
-                  className="flex flex-col items-center origin-bottom"
-                  style={{
-                    transform: balloon.popped 
-                      ? `translateY(100vh) scale(0.6) rotate(${index % 2 === 0 ? '45deg' : '-45deg'})` 
-                      : `scale(${balloon.scale}) translateY(0px)`,
-                    opacity: balloon.popped ? 0 : 1,
-                    transitionProperty: 'transform, opacity',
-                    transitionDuration: balloon.popped ? '4s' : '1.5s',
-                    transitionTimingFunction: balloon.popped ? 'ease-in' : 'ease-out',
-                  }}
-                >
-                  {/* SVG Balloon */}
-                  <svg width="60" height="80" viewBox="0 0 60 80" className="drop-shadow-xl z-10 transition-all duration-500">
-                    <defs>
-                      <linearGradient id={`grad-${balloon.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="white" stopOpacity="0.8" />
-                        <stop offset="20%" stopColor={balloon.hex} stopOpacity="1" />
-                        <stop offset="100%" stopColor="black" stopOpacity="0.4" />
-                      </linearGradient>
-                    </defs>
-                    
-                    {balloon.popped ? (
-                      <path 
-                        d="M20 70 Q10 60, 25 50 T30 40 Q40 50, 35 65 T20 70 Z" 
-                        fill={balloon.hex} opacity="0.8"
-                      />
-                    ) : (
-                      <>
-                        <path 
-                          d="M30 0 C10 0, 0 15, 0 35 C0 55, 15 70, 30 75 C45 70, 60 55, 60 35 C60 15, 50 0, 30 0 Z" 
-                          fill={`url(#grad-${balloon.id})`}
-                        />
-                        <path 
-                          d="M15 15 C20 10, 30 10, 35 15 C30 18, 20 18, 15 15 Z" 
-                          fill="white" opacity="0.4"
-                        />
-                      </>
-                    )}
-                    <polygon points="25,74 35,74 32,80 28,80" fill={balloon.hex} />
-                  </svg>
+                <div>
+                  <label className="block text-lg font-bold mb-2">Environment</label>
+                  <select 
+                    value={bgTheme} 
+                    onChange={e => setBgTheme(e.target.value)}
+                    className="w-full bg-black/20 border border-white/30 rounded-xl p-3 outline-none focus:ring-2 focus:ring-white/50 [&>option]:text-black"
+                  >
+                    <option value="SUNNY">Sunny Day</option>
+                    <option value="NIGHT">Night Sky</option>
+                    <option value="MIAMI">Neon</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-3 mt-2">
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="checkbox" 
+                      id="musicToggle" 
+                      checked={musicOn} 
+                      onChange={toggleMusic}
+                      className="w-6 h-6 rounded accent-pink-500 cursor-pointer"
+                    />
+                    <label htmlFor="musicToggle" className="text-lg font-bold cursor-pointer">
+                      Background Music On
+                    </label>
+                  </div>
                   
-                  {!balloon.popped && (
-                    <div className="w-0.5 h-32 bg-white/50 z-0 origin-top"></div>
+                  {musicOn && (
+                    <div className="flex items-center gap-3 pl-8 animate-fade-in">
+                       <label className="text-md font-bold">Sound:</label>
+                       <select 
+                         value={bgmTrack} 
+                         onChange={changeTrack}
+                         className="bg-black/20 border border-white/30 rounded-lg p-2 outline-none focus:ring-2 focus:ring-white/50 [&>option]:text-black"
+                       >
+                         <option value="WAVES">Waves</option>
+                         <option value="BIRDS">Birds</option>
+                       </select>
+                    </div>
                   )}
                 </div>
               </div>
-            );
-          })}
-        </div>
 
-        {/* Word Display */}
-        <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mb-8 z-20">
-          {word.split('').map((char, i) => {
-            const isRevealed = guessedLetters.has(char) || gameState === 'lost';
-            const isMissed = gameState === 'lost' && !guessedLetters.has(char);
-            
-            return (
-              <div 
-                key={i} 
-                className={`w-10 h-14 sm:w-14 sm:h-16 flex items-center justify-center text-3xl sm:text-4xl font-extrabold uppercase rounded-xl border-b-4 transition-all duration-300
-                  ${isRevealed ? 'bg-white text-slate-900 border-slate-300 shadow-lg' : 'bg-black/20 text-transparent border-white/20 backdrop-blur-sm'}
-                  ${isMissed ? '!text-rose-500' : ''}
-                `}
+              <button 
+                onClick={() => initGame(difficulty)}
+                className="w-full py-4 bg-white text-black font-bold text-xl rounded-full hover:scale-105 transition-transform shadow-xl"
               >
-                {isRevealed ? char : ''}
+                Start Game
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      const keyboardRows = [
+        "QWERTYUIOP".split(''),
+        "ASDFGHJKL".split(''),
+        "ZXCVBNM".split('')
+      ];
+
+      const activeBalloonsCount = balloons.filter(b => !b.popped).length;
+      const isDarkTheme = bgTheme === 'NIGHT' || bgTheme === 'MIAMI';
+
+      return (
+        <div className={`min-h-screen flex flex-col items-center justify-between p-4 sm:p-8 font-sans overflow-hidden transition-colors duration-1000 ${getBackgroundStyles()}`}>
+          {renderBackgroundDecorations()}
+
+          {/* Top Bar */}
+          <div className="w-full max-w-5xl flex justify-between items-center z-20 px-4">
+             <button onClick={() => { setGameState('setup'); sfx.setMusic(false); }} className="bg-black/20 hover:bg-black/40 px-4 py-2 rounded-full backdrop-blur-md transition-colors font-bold">
+               ← Home
+             </button>
+             <div className="text-xl font-black tracking-widest uppercase opacity-80">
+                {difficulty}
+             </div>
+          </div>
+
+          <div className="max-w-4xl w-full z-10 flex flex-col items-center flex-1 justify-center relative">
+            
+            {/* Banner Overlays */}
+            {(gameState === 'won' || gameState === 'lost') && (
+              <div className="absolute top-[20%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[120vw] z-50 pointer-events-none">
+                <div className="animate-banner-unfurl w-full flex justify-center drop-shadow-2xl">
+                  <div className={`px-20 py-8 text-5xl sm:text-7xl font-black tracking-tighter text-white uppercase transform -skew-x-12 border-y-8 border-white shadow-2xl ${gameState === 'won' ? 'bg-emerald-500' : 'bg-rose-600'}`}>
+                    {gameState === 'won' ? 'WINNER!' : 'GOOD TRY!'}
+                  </div>
+                </div>
               </div>
-            );
-          })}
-        </div>
+            )}
 
-        {/* Hint Button */}
-        <div className="mb-6 flex justify-center z-20">
-           <button 
-             onClick={useHint}
-             disabled={hintUsed || gameState !== 'playing' || activeBalloonsCount <= 1}
-             className={`px-6 py-2 rounded-full font-bold flex items-center gap-2 transition-all
-               ${hintUsed || activeBalloonsCount <= 1 || gameState !== 'playing'
-                 ? 'bg-black/20 text-white/50 cursor-not-allowed' 
-                 : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-300 hover:scale-105 shadow-lg'}
-             `}
-           >
-             💡 Use Hint (Costs 1 Balloon)
-           </button>
-        </div>
+            {/* Confetti Particles */}
+            {confetti && (
+               <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
+                  {Array.from({length: 100}).map((_, i) => {
+                    const colors = ['bg-pink-500', 'bg-blue-500', 'bg-yellow-400', 'bg-green-500', 'bg-purple-500'];
+                    return (
+                      <div 
+                        key={i} 
+                        className={`absolute w-3 h-3 ${colors[Math.floor(Math.random() * colors.length)]} animate-confetti-fall`}
+                        style={{
+                          left: `${Math.random() * 100}%`,
+                          top: `-5%`,
+                          animationDelay: `${Math.random() * 2}s`,
+                          animationDuration: `${Math.random() * 2 + 2}s`
+                        }}
+                      />
+                    )
+                  })}
+               </div>
+            )}
 
-        {/* Keyboard */}
-        <div className="flex flex-col gap-2 w-full max-w-2xl z-20">
-          {keyboardRows.map((row, rowIndex) => (
-            <div key={rowIndex} className="flex justify-center gap-1 sm:gap-2">
-              {row.map(key => {
-                const isGuessed = guessedLetters.has(key);
-                const isCorrect = isGuessed && word.includes(key);
-                const isWrong = isGuessed && !word.includes(key);
-
-                let keyClasses = "flex-1 h-12 sm:h-14 rounded-xl font-bold text-lg sm:text-xl transition-all duration-200 shadow-md active:scale-95 flex items-center justify-center ";
-                
-                if (isCorrect) {
-                  keyClasses += "bg-emerald-500 text-white border-b-4 border-emerald-700";
-                } else if (isWrong) {
-                  keyClasses += "bg-black/30 text-white/30 cursor-not-allowed border-b-4 border-transparent backdrop-blur-sm shadow-none";
-                } else {
-                  keyClasses += isDarkTheme 
-                    ? "bg-white/10 text-white hover:bg-white/20 border-b-4 border-white/20 backdrop-blur-md" 
-                    : "bg-white text-slate-800 hover:bg-slate-100 border-b-4 border-slate-200";
-                }
-
+            {/* Balloon Area */}
+            <div className="flex justify-center items-end h-64 sm:h-80 w-full mb-8 gap-1 sm:gap-4 relative z-20">
+              {balloons.map((balloon, index) => {
                 return (
-                  <button
-                    key={key}
-                    onClick={() => handleGuess(key)}
-                    disabled={isGuessed || gameState !== 'playing'}
-                    className={keyClasses}
+                  <div 
+                    key={balloon.id} 
+                    className="relative flex flex-col items-center"
+                    style={{
+                      animation: balloon.popped ? 'none' : `bob 3s ease-in-out infinite ${index * 0.2}s alternate`
+                    }}
                   >
-                    {key}
-                  </button>
+                    <div
+                      className="flex flex-col items-center origin-bottom"
+                      style={{
+                        transform: balloon.popped 
+                          ? `translateY(100vh) scale(0.6) rotate(${index % 2 === 0 ? '45deg' : '-45deg'})` 
+                          : `scale(${balloon.scale}) translateY(0px)`,
+                        opacity: balloon.popped ? 0 : 1,
+                        transitionProperty: 'transform, opacity',
+                        transitionDuration: balloon.popped ? '4s' : '1.5s',
+                        transitionTimingFunction: balloon.popped ? 'ease-in' : 'ease-out',
+                      }}
+                    >
+                      {/* SVG Balloon */}
+                      <svg width="60" height="80" viewBox="0 0 60 80" className="drop-shadow-xl z-10 transition-all duration-500">
+                        <defs>
+                          <linearGradient id={`grad-${balloon.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stopColor="white" stopOpacity="0.8" />
+                            <stop offset="20%" stopColor={balloon.hex} stopOpacity="1" />
+                            <stop offset="100%" stopColor="black" stopOpacity="0.4" />
+                          </linearGradient>
+                        </defs>
+                        
+                        {balloon.popped ? (
+                          <path 
+                            d="M20 70 Q10 60, 25 50 T30 40 Q40 50, 35 65 T20 70 Z" 
+                            fill={balloon.hex} opacity="0.8"
+                          />
+                        ) : (
+                          <>
+                            <path 
+                              d="M30 0 C10 0, 0 15, 0 35 C0 55, 15 70, 30 75 C45 70, 60 55, 60 35 C60 15, 50 0, 30 0 Z" 
+                              fill={`url(#grad-${balloon.id})`}
+                            />
+                            <path 
+                              d="M15 15 C20 10, 30 10, 35 15 C30 18, 20 18, 15 15 Z" 
+                              fill="white" opacity="0.4"
+                            />
+                          </>
+                        )}
+                        <polygon points="25,74 35,74 32,80 28,80" fill={balloon.hex} />
+                      </svg>
+                      
+                      {!balloon.popped && (
+                        <div className="w-0.5 h-32 bg-white/50 z-0 origin-top"></div>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
             </div>
-          ))}
+
+            {/* Word Display */}
+            <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mb-8 z-20">
+              {word.split('').map((char, i) => {
+                const isRevealed = guessedLetters.has(char) || gameState === 'lost';
+                const isMissed = gameState === 'lost' && !guessedLetters.has(char);
+                
+                return (
+                  <div 
+                    key={i} 
+                    className={`w-10 h-14 sm:w-14 sm:h-16 flex items-center justify-center text-3xl sm:text-4xl font-extrabold uppercase rounded-xl border-b-4 transition-all duration-300
+                      ${isRevealed ? 'bg-white text-slate-900 border-slate-300 shadow-lg' : 'bg-black/20 text-transparent border-white/20 backdrop-blur-sm'}
+                      ${isMissed ? '!text-rose-500' : ''}
+                    `}
+                  >
+                    {isRevealed ? char : ''}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Hint Button */}
+            <div className="mb-6 flex justify-center z-20">
+               <button 
+                 onClick={useHint}
+                 disabled={hintUsed || gameState !== 'playing' || activeBalloonsCount <= 1}
+                 className={`px-6 py-2 rounded-full font-bold flex items-center gap-2 transition-all
+                   ${hintUsed || activeBalloonsCount <= 1 || gameState !== 'playing'
+                     ? 'bg-black/20 text-white/50 cursor-not-allowed' 
+                     : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-300 hover:scale-105 shadow-lg'}
+                 `}
+               >
+                 💡 Use Hint (Costs 1 Balloon)
+               </button>
+            </div>
+
+            {/* Keyboard */}
+            <div className="flex flex-col gap-2 w-full max-w-2xl z-20">
+              {keyboardRows.map((row, rowIndex) => (
+                <div key={rowIndex} className="flex justify-center gap-1 sm:gap-2">
+                  {row.map(key => {
+                    const isGuessed = guessedLetters.has(key);
+                    const isCorrect = isGuessed && word.includes(key);
+                    const isWrong = isGuessed && !word.includes(key);
+
+                    let keyClasses = "flex-1 h-12 sm:h-14 rounded-xl font-bold text-lg sm:text-xl transition-all duration-200 shadow-md active:scale-95 flex items-center justify-center ";
+                    
+                    if (isCorrect) {
+                      keyClasses += "bg-emerald-500 text-white border-b-4 border-emerald-700";
+                    } else if (isWrong) {
+                      keyClasses += "bg-black/30 text-white/30 cursor-not-allowed border-b-4 border-transparent backdrop-blur-sm shadow-none";
+                    } else {
+                      keyClasses += isDarkTheme 
+                        ? "bg-white/10 text-white hover:bg-white/20 border-b-4 border-white/20 backdrop-blur-md" 
+                        : "bg-white text-slate-800 hover:bg-slate-100 border-b-4 border-slate-200";
+                    }
+
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => handleGuess(key)}
+                        disabled={isGuessed || gameState !== 'playing'}
+                        className={keyClasses}
+                      >
+                        {key}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            {/* Play Again Prompt */}
+            {(gameState === 'won' || gameState === 'lost') && (
+               <div className="mt-8 z-30 flex flex-wrap justify-center gap-4 animate-fade-in">
+                 <button 
+                    onClick={() => initGame(difficulty)}
+                    className="px-8 py-3 bg-emerald-500 text-white text-lg font-extrabold rounded-full shadow-2xl hover:scale-105 transition-transform"
+                 >
+                   PLAY AGAIN
+                 </button>
+                 <button 
+                    onClick={() => { setGameState('setup'); sfx.setMusic(false); }}
+                    className="px-8 py-3 bg-sky-500 text-white text-lg font-extrabold rounded-full shadow-2xl hover:scale-105 transition-transform"
+                 >
+                   RETURN TO HOME
+                 </button>
+                 <button 
+                    onClick={handleAllDone}
+                    className="px-8 py-3 bg-rose-600 text-white text-lg font-extrabold rounded-full shadow-2xl hover:scale-105 transition-transform"
+                 >
+                   ALL DONE
+                 </button>
+               </div>
+            )}
+          </div>
+
+          {/* Keyframes */}
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes bob {
+              0% { transform: translateY(0px); }
+              100% { transform: translateY(-20px); }
+            }
+            @keyframes banner-unfurl {
+              0% { clip-path: polygon(0 0, 0 0, 0 100%, 0 100%); }
+              100% { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+            }
+            .animate-banner-unfurl {
+              animation: banner-unfurl 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            @keyframes confetti-fall {
+              0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+              100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+            }
+            .animate-confetti-fall {
+              animation-timing-function: linear;
+              animation-fill-mode: forwards;
+            }
+            @keyframes fade-in {
+              0% { opacity: 0; transform: translateY(20px); }
+              100% { opacity: 1; transform: translateY(0); }
+            }
+            .animate-fade-in {
+              animation: fade-in 0.5s ease-out forwards;
+              animation-delay: 1.5s;
+              opacity: 0;
+            }
+          `}} />
         </div>
+      );
+    }
 
-        {/* Play Again Prompt */}
-        {(gameState === 'won' || gameState === 'lost') && (
-           <div className="mt-8 z-30 flex flex-wrap justify-center gap-4 animate-fade-in">
-             <button 
-                onClick={() => initGame(difficulty)}
-                className="px-8 py-3 bg-emerald-500 text-white text-lg font-extrabold rounded-full shadow-2xl hover:scale-105 transition-transform"
-             >
-               PLAY AGAIN
-             </button>
-             <button 
-                onClick={() => { setGameState('setup'); sfx.setMusic(false); }}
-                className="px-8 py-3 bg-sky-500 text-white text-lg font-extrabold rounded-full shadow-2xl hover:scale-105 transition-transform"
-             >
-               RETURN TO HOME
-             </button>
-             <button 
-                onClick={handleAllDone}
-                className="px-8 py-3 bg-rose-600 text-white text-lg font-extrabold rounded-full shadow-2xl hover:scale-105 transition-transform"
-             >
-               ALL DONE
-             </button>
-           </div>
-        )}
-      </div>
-
-      {/* Keyframes */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes bob {
-          0% { transform: translateY(0px); }
-          100% { transform: translateY(-20px); }
-        }
-        @keyframes banner-unfurl {
-          0% { clip-path: polygon(0 0, 0 0, 0 100%, 0 100%); }
-          100% { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
-        }
-        .animate-banner-unfurl {
-          animation: banner-unfurl 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        @keyframes confetti-fall {
-          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
-        }
-        .animate-confetti-fall {
-          animation-timing-function: linear;
-          animation-fill-mode: forwards;
-        }
-        @keyframes fade-in {
-          0% { opacity: 0; transform: translateY(20px); }
-          100% { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.5s ease-out forwards;
-          animation-delay: 1.5s;
-          opacity: 0;
-        }
-      `}} />
-    </div>
-  );
-}
-    // --- PASTE ALL YOUR CANVAS CODE HERE ---
-    // (Remember to delete the "import React..." line at the top after pasting!)
-
-    // This line launches the game on the page
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
